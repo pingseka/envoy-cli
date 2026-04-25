@@ -1,51 +1,30 @@
-"""CLI entry point for envoy-cli."""
+"""Main CLI entry point for envoy."""
 
 import argparse
 import sys
 
-from envoy.diff import diff_env_files, DiffStatus
+from envoy.cli_sync import cmd_sync, cmd_profile_add, cmd_profile_list, cmd_profile_remove
+from envoy.cli_snapshot import (
+    cmd_snapshot_capture,
+    cmd_snapshot_restore,
+    cmd_snapshot_list,
+    cmd_snapshot_remove,
+)
+from envoy.cli_template import register_commands as register_template_commands
 
 
-STATUS_COLORS = {
-    DiffStatus.ADDED: "\033[32m",     # green
-    DiffStatus.REMOVED: "\033[31m",   # red
-    DiffStatus.CHANGED: "\033[33m",   # yellow
-    DiffStatus.UNCHANGED: "\033[0m",  # reset
-}
-RESET = "\033[0m"
-
-
-def _colored(text: str, status: DiffStatus, use_color: bool) -> str:
-    if not use_color:
-        return text
-    return f"{STATUS_COLORS.get(status, '')}{text}{RESET}"
+def _colored(text: str, color: str) -> str:
+    codes = {"red": "\033[31m", "green": "\033[32m", "yellow": "\033[33m", "reset": "\033[0m"}
+    return f"{codes.get(color, '')}{text}{codes['reset']}"
 
 
 def cmd_diff(args: argparse.Namespace) -> int:
-    """Handle the `envoy diff` subcommand."""
-    try:
-        result = diff_env_files(args.base, args.target, show_unchanged=args.all)
-    except FileNotFoundError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        return 1
+    from envoy.diff import diff_env_files
 
-    use_color = not args.no_color and sys.stdout.isatty()
-
-    if not result.has_changes and not args.all:
-        print("No differences found.")
-        return 0
-
+    result = diff_env_files(args.base, args.target)
     for entry in result.entries:
-        line = _colored(str(entry), entry.status, use_color)
-        print(line)
-
-    summary = result.summary
-    print(
-        f"\nSummary: +{summary['added']} added, "
-        f"-{summary['removed']} removed, "
-        f"~{summary['changed']} changed"
-    )
-    return 1 if result.has_changes else 0
+        print(entry)
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -53,36 +32,72 @@ def build_parser() -> argparse.ArgumentParser:
         prog="envoy",
         description="Manage and sync .env files across environments.",
     )
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
 
-    diff_parser = subparsers.add_parser("diff", help="Diff two .env files")
+    # diff
+    diff_parser = subparsers.add_parser("diff", help="Show diff between two .env files")
     diff_parser.add_argument("base", help="Base .env file")
-    diff_parser.add_argument("target", help="Target .env file to compare against")
-    diff_parser.add_argument(
-        "--all", "-a", action="store_true", help="Show unchanged keys too"
-    )
-    diff_parser.add_argument(
-        "--no-color", action="store_true", help="Disable colored output"
-    )
+    diff_parser.add_argument("target", help="Target .env file")
+    diff_parser.set_defaults(func=cmd_diff)
+
+    # sync
+    sync_parser = subparsers.add_parser("sync", help="Sync variables from source to target")
+    sync_parser.add_argument("source")
+    sync_parser.add_argument("target")
+    sync_parser.add_argument("--force", action="store_true")
+    sync_parser.set_defaults(func=cmd_sync)
+
+    # profile
+    profile_parser = subparsers.add_parser("profile", help="Manage profiles")
+    profile_sub = profile_parser.add_subparsers(dest="profile_command")
+
+    add_p = profile_sub.add_parser("add")
+    add_p.add_argument("name")
+    add_p.add_argument("path")
+    add_p.set_defaults(func=cmd_profile_add)
+
+    list_p = profile_sub.add_parser("list")
+    list_p.set_defaults(func=cmd_profile_list)
+
+    remove_p = profile_sub.add_parser("remove")
+    remove_p.add_argument("name")
+    remove_p.set_defaults(func=cmd_profile_remove)
+
+    # snapshot
+    snap_parser = subparsers.add_parser("snapshot", help="Manage snapshots")
+    snap_sub = snap_parser.add_subparsers(dest="snapshot_command")
+
+    cap = snap_sub.add_parser("capture")
+    cap.add_argument("file")
+    cap.add_argument("--label", default=None)
+    cap.set_defaults(func=cmd_snapshot_capture)
+
+    restore = snap_sub.add_parser("restore")
+    restore.add_argument("snapshot_id")
+    restore.add_argument("output")
+    restore.set_defaults(func=cmd_snapshot_restore)
+
+    ls = snap_sub.add_parser("list")
+    ls.set_defaults(func=cmd_snapshot_list)
+
+    rm = snap_sub.add_parser("remove")
+    rm.add_argument("snapshot_id")
+    rm.set_defaults(func=cmd_snapshot_remove)
+
+    # template / render
+    register_template_commands(subparsers)
 
     return parser
 
 
-def main() -> None:
+def main(argv=None) -> int:
     parser = build_parser()
-    args = parser.parse_args()
-
-    handlers = {
-        "diff": cmd_diff,
-    }
-
-    handler = handlers.get(args.command)
-    if handler is None:
+    args = parser.parse_args(argv)
+    if not hasattr(args, "func"):
         parser.print_help()
-        sys.exit(1)
-
-    sys.exit(handler(args))
+        return 0
+    return args.func(args) or 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
