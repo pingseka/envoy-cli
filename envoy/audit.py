@@ -90,6 +90,15 @@ class AuditLog:
     def entries(self) -> List[AuditEntry]:
         return list(self._entries)
 
+    def filter_by_action(self, action: str) -> List[AuditEntry]:
+        """Return all entries matching the given action (case-insensitive)."""
+        normalized = action.lower()
+        return [e for e in self._entries if e.action.lower() == normalized]
+
+    def last(self, n: int = 10) -> List[AuditEntry]:
+        """Return the most recent *n* entries."""
+        return list(self._entries[-n:])
+
     def clear(self) -> None:
         self._entries = []
         if self.log_path.exists():
