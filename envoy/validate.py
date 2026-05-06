@@ -38,6 +38,14 @@ class ValidationResult:
     def is_valid(self) -> bool:
         return not self.has_errors
 
+    def errors(self) -> List[ValidationIssue]:
+        """Return only ERROR-severity issues."""
+        return [i for i in self.issues if i.severity == ValidationSeverity.ERROR]
+
+    def warnings(self) -> List[ValidationIssue]:
+        """Return only WARNING-severity issues."""
+        return [i for i in self.issues if i.severity == ValidationSeverity.WARNING]
+
     def __len__(self) -> int:
         return len(self.issues)
 
