@@ -36,8 +36,12 @@ def cmd_mask(args: argparse.Namespace) -> int:
 
     if args.output:
         serialized = serialize_env(result.masked_env)
-        with open(args.output, "w") as fh:
-            fh.write(serialized)
+        try:
+            with open(args.output, "w") as fh:
+                fh.write(serialized)
+        except OSError as exc:
+            print(_colored(f"error: could not write to {args.output}: {exc}", "31"), file=sys.stderr)
+            return 1
         print(_colored(f"Written to {args.output}", "32"))
     else:
         for key, value in result.masked_env.items():
